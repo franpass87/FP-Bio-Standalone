@@ -72,6 +72,10 @@ Example content:
 
 ## Changelog
 
+### 1.3.4
+- Improved icon parsing from FP Publisher HTML (better emoji extraction)
+- Enhanced UTF-8 validation for icons
+
 ### 1.3.3
 - Fix emoji icon encoding issue (prevent ???? display)
 - Improve UTF-8 handling and validation

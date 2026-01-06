@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.3.3
+ * Version: 1.3.4
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.3.3');
+define('FP_BIO_STANDALONE_VERSION', '1.3.4');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -119,48 +119,47 @@ function fp_bio_standalone_get_links() {
             continue;
         }
         
-        // Extract all spans - FP Publisher generates: <span>ICON</span><span>TITLE</span>
-        preg_match_all('/<span[^>]*>(.*?)<\/span>/isu', $inner_html, $spans);
+        // Extract all spans - FP Publisher generates: <span style="...">ICON</span><span style="...">TITLE</span>
+        // Use non-greedy matching and ensure UTF-8
+        preg_match_all('/<span[^>]*>(.*?)<\/span>/isu', $inner_html, $spans, PREG_SET_ORDER);
         
         $icon = '';
         $title = '';
         
-        if (!empty($spans[1]) && count($spans[1]) >= 2) {
-            // First span is usually the icon
-            $first_span_raw = $spans[1][0];
-            $first_span = trim(strip_tags(html_entity_decode($first_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        if (count($spans) >= 2) {
+            // FP Publisher structure: first span = icon, second span = title
+            $first_span_raw = $spans[0][1]; // First match, captured group
+            $second_span_raw = $spans[1][1]; // Second match, captured group
             
-            // Second span is usually the title
-            $second_span_raw = $spans[1][1];
+            // Decode HTML entities and strip tags, preserve emoji
+            $first_span = trim(strip_tags(html_entity_decode($first_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
             $second_span = trim(strip_tags(html_entity_decode($second_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
             
-            // Ensure UTF-8 encoding
+            // Ensure UTF-8 encoding (force conversion if needed)
             if (!mb_check_encoding($first_span, 'UTF-8')) {
-                $first_span = mb_convert_encoding($first_span, 'UTF-8', mb_detect_encoding($first_span));
+                $first_span = mb_convert_encoding($first_span, 'UTF-8', 'UTF-8');
             }
             if (!mb_check_encoding($second_span, 'UTF-8')) {
-                $second_span = mb_convert_encoding($second_span, 'UTF-8', mb_detect_encoding($second_span));
+                $second_span = mb_convert_encoding($second_span, 'UTF-8', 'UTF-8');
             }
             
-            // Always use first span as icon if it's not empty (FP Publisher structure)
-            if ($first_span !== '' && $first_span !== '????') {
+            // First span is always the icon (emoji)
+            if ($first_span !== '' && $first_span !== '????' && mb_strlen($first_span) <= 4) {
                 $icon = $first_span;
             }
             
-            // Use second span as title
+            // Second span is always the title
             if ($second_span !== '') {
                 $title = $second_span;
-            } elseif ($first_span !== '' && mb_strlen($first_span) > 10) {
-                // If first span is very long, it might be the title instead (edge case)
-                $title = $first_span;
-                $icon = '';
             }
-        } elseif (!empty($spans[1]) && count($spans[1]) === 1) {
-            // Only one span - could be either icon or title
-            $span_text = trim(strip_tags(html_entity_decode($spans[1][0], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        } elseif (count($spans) === 1) {
+            // Edge case: only one span - try to detect if it's icon or title
+            $span_text = trim(strip_tags(html_entity_decode($spans[0][1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
             if (!mb_check_encoding($span_text, 'UTF-8')) {
-                $span_text = mb_convert_encoding($span_text, 'UTF-8', mb_detect_encoding($span_text));
+                $span_text = mb_convert_encoding($span_text, 'UTF-8', 'UTF-8');
             }
+            
+            // If it's short (1-2 chars) and not "????", it's likely an icon
             if (mb_strlen($span_text) <= 2 && $span_text !== '????') {
                 $icon = $span_text;
             } else {
@@ -178,8 +177,13 @@ function fp_bio_standalone_get_links() {
         }
         
         // Default icon if none found
-        if (empty($icon)) {
+        if (empty($icon) || $icon === '????') {
             $icon = '🔗';
+        }
+        
+        // Ensure icon is valid UTF-8 emoji
+        if (!mb_check_encoding($icon, 'UTF-8')) {
+            $icon = mb_convert_encoding($icon, 'UTF-8', 'UTF-8');
         }
         
         // Skip if no meaningful title
