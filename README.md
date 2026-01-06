@@ -72,6 +72,11 @@ Example content:
 
 ## Changelog
 
+### 1.3.3
+- Fix emoji icon encoding issue (prevent ???? display)
+- Improve UTF-8 handling and validation
+- Remove wp_kses filter from icon output to preserve emojis
+
 ### 1.3.2
 - Remove border and shadow around logo (display logo only, no circle)
 

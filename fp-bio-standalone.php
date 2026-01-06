@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.3.2
+ * Version: 1.3.3
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.3.2');
+define('FP_BIO_STANDALONE_VERSION', '1.3.3');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -90,6 +90,11 @@ function fp_bio_standalone_get_links() {
     // Decode HTML entities to get proper UTF-8 characters (including emojis)
     $content = html_entity_decode($bio_page->post_content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     
+    // Ensure UTF-8 encoding
+    if (!mb_check_encoding($content, 'UTF-8')) {
+        $content = mb_convert_encoding($content, 'UTF-8', mb_detect_encoding($content));
+    }
+    
     // Parse links with improved regex that handles nested elements
     // FP Publisher generates: <a href="URL" style="..."><span style="...">ICON</span><span style="...">TITLE</span></a>
     // Match <a> tags and extract href and inner content
@@ -98,6 +103,11 @@ function fp_bio_standalone_get_links() {
     foreach ($matches as $match) {
         $url = $match[1];
         $inner_html = html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        
+        // Ensure UTF-8 encoding for inner HTML
+        if (!mb_check_encoding($inner_html, 'UTF-8')) {
+            $inner_html = mb_convert_encoding($inner_html, 'UTF-8', mb_detect_encoding($inner_html));
+        }
         
         // Skip internal WordPress links and anchors
         if (strpos($url, '#') === 0 || strpos($url, 'wp-admin') !== false || strpos($url, 'wp-login') !== false) {
@@ -117,12 +127,23 @@ function fp_bio_standalone_get_links() {
         
         if (!empty($spans[1]) && count($spans[1]) >= 2) {
             // First span is usually the icon
-            $first_span = trim(strip_tags(html_entity_decode($spans[1][0], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $first_span_raw = $spans[1][0];
+            $first_span = trim(strip_tags(html_entity_decode($first_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            
             // Second span is usually the title
-            $second_span = trim(strip_tags(html_entity_decode($spans[1][1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $second_span_raw = $spans[1][1];
+            $second_span = trim(strip_tags(html_entity_decode($second_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            
+            // Ensure UTF-8 encoding
+            if (!mb_check_encoding($first_span, 'UTF-8')) {
+                $first_span = mb_convert_encoding($first_span, 'UTF-8', mb_detect_encoding($first_span));
+            }
+            if (!mb_check_encoding($second_span, 'UTF-8')) {
+                $second_span = mb_convert_encoding($second_span, 'UTF-8', mb_detect_encoding($second_span));
+            }
             
             // Always use first span as icon if it's not empty (FP Publisher structure)
-            if ($first_span !== '') {
+            if ($first_span !== '' && $first_span !== '????') {
                 $icon = $first_span;
             }
             
@@ -137,7 +158,10 @@ function fp_bio_standalone_get_links() {
         } elseif (!empty($spans[1]) && count($spans[1]) === 1) {
             // Only one span - could be either icon or title
             $span_text = trim(strip_tags(html_entity_decode($spans[1][0], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-            if (mb_strlen($span_text) <= 2) {
+            if (!mb_check_encoding($span_text, 'UTF-8')) {
+                $span_text = mb_convert_encoding($span_text, 'UTF-8', mb_detect_encoding($span_text));
+            }
+            if (mb_strlen($span_text) <= 2 && $span_text !== '????') {
                 $icon = $span_text;
             } else {
                 $title = $span_text;
@@ -271,6 +295,7 @@ function fp_bio_standalone_render_page() {
 <html lang="<?php echo esc_attr(get_locale()); ?>"<?php echo $theme === 'dark' ? ' class="dark"' : ($theme === 'light' ? ' class="light"' : ''); ?>>
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="<?php echo esc_attr($primary); ?>">
     <meta name="description" content="<?php echo esc_attr($site_description); ?>">
@@ -517,8 +542,8 @@ function fp_bio_standalone_render_page() {
             <?php if (!empty($links)): ?>
                 <?php foreach ($links as $link): ?>
                 <a href="<?php echo esc_url($link['url']); ?>" class="bio-link" target="_blank" rel="noopener">
-                    <?php if (!empty($link['icon'])): ?>
-                    <span class="bio-link-icon"><?php echo wp_kses($link['icon'], []); ?></span>
+                    <?php if (!empty($link['icon']) && $link['icon'] !== '????'): ?>
+                    <span class="bio-link-icon"><?php echo $link['icon']; ?></span>
                     <?php endif; ?>
                     <span><?php echo esc_html($link['title']); ?></span>
                 </a>
