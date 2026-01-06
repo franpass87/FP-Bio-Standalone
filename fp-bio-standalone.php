@@ -241,6 +241,15 @@ function fp_bio_standalone_render_page() {
     <meta property="og:image" content="<?php echo esc_url($logo_url); ?>">
     <?php endif; ?>
     <title><?php echo esc_html($site_name); ?> - Link</title>
+    <?php 
+    // Favicon - usa il site icon di WordPress
+    $favicon_url = get_site_icon_url(32);
+    $favicon_url_large = get_site_icon_url(180);
+    if ($favicon_url): ?>
+    <link rel="icon" href="<?php echo esc_url($favicon_url); ?>" sizes="32x32">
+    <link rel="icon" href="<?php echo esc_url($favicon_url_large); ?>" sizes="192x192">
+    <link rel="apple-touch-icon" href="<?php echo esc_url($favicon_url_large); ?>">
+    <?php endif; ?>
     <style>
         :root {
             --primary: <?php echo esc_attr($primary); ?>;
