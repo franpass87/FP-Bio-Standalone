@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.3.4
+ * Version: 1.3.5
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.3.4');
+define('FP_BIO_STANDALONE_VERSION', '1.3.5');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -131,9 +131,21 @@ function fp_bio_standalone_get_links() {
             $first_span_raw = $spans[0][1]; // First match, captured group
             $second_span_raw = $spans[1][1]; // Second match, captured group
             
-            // Decode HTML entities and strip tags, preserve emoji
-            $first_span = trim(strip_tags(html_entity_decode($first_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-            $second_span = trim(strip_tags(html_entity_decode($second_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            // Decode HTML entities MULTIPLE TIMES to handle nested encoding (WordPress might double-encode)
+            // Also handle numeric entities (e.g., &#128722; for 🛒)
+            $first_span_raw_decoded = html_entity_decode($first_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $first_span_raw_decoded = html_entity_decode($first_span_raw_decoded, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // Double decode
+            // Decode numeric HTML entities
+            $first_span_raw_decoded = preg_replace_callback('/&#(\d+);/', function($matches) {
+                return mb_convert_encoding('&#' . intval($matches[1]) . ';', 'UTF-8', 'HTML-ENTITIES');
+            }, $first_span_raw_decoded);
+            
+            $second_span_raw_decoded = html_entity_decode($second_span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $second_span_raw_decoded = html_entity_decode($second_span_raw_decoded, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // Double decode
+            
+            // Strip tags and trim
+            $first_span = trim(strip_tags($first_span_raw_decoded));
+            $second_span = trim(strip_tags($second_span_raw_decoded));
             
             // Ensure UTF-8 encoding (force conversion if needed)
             if (!mb_check_encoding($first_span, 'UTF-8')) {
@@ -154,7 +166,9 @@ function fp_bio_standalone_get_links() {
             }
         } elseif (count($spans) === 1) {
             // Edge case: only one span - try to detect if it's icon or title
-            $span_text = trim(strip_tags(html_entity_decode($spans[0][1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $span_raw = html_entity_decode($spans[0][1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $span_raw = html_entity_decode($span_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // Double decode
+            $span_text = trim(strip_tags($span_raw));
             if (!mb_check_encoding($span_text, 'UTF-8')) {
                 $span_text = mb_convert_encoding($span_text, 'UTF-8', 'UTF-8');
             }
