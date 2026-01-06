@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.3.1
+ * Version: 1.3.2
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.3.1');
+define('FP_BIO_STANDALONE_VERSION', '1.3.2');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -370,11 +370,8 @@ function fp_bio_standalone_render_page() {
         .bio-logo {
             width: <?php echo $logo_width; ?>px;
             height: <?php echo $logo_height; ?>px;
-            border-radius: <?php echo ($logo_width === $logo_height) ? '50%' : '12px'; ?>;
-            object-fit: cover;
-            border: 3px solid var(--primary);
+            object-fit: contain;
             margin-bottom: 16px;
-            box-shadow: 0 0 0 4px var(--primary-light);
         }
 
         .bio-name {

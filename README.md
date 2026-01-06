@@ -72,6 +72,9 @@ Example content:
 
 ## Changelog
 
+### 1.3.2
+- Remove border and shadow around logo (display logo only, no circle)
+
 ### 1.3.1
 - Fix icon parsing from FP Publisher content (now correctly extracts icon from first span)
 
