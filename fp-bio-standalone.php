@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.1.1
+ * Version: 1.2.0
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.1.1');
+define('FP_BIO_STANDALONE_VERSION', '1.2.0');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -200,6 +200,8 @@ function fp_bio_standalone_get_settings() {
         'primary_color' => '#8B1538', // Wine red to match the screenshot
         'theme' => 'auto',
         'description' => '',
+        'logo_width' => 100,
+        'logo_height' => 100,
     ];
     
     $saved = get_option('fp_bio_standalone_settings', []);
@@ -224,6 +226,10 @@ function fp_bio_standalone_render_page() {
     
     // Theme
     $theme = $settings['theme'] ?: 'auto';
+    
+    // Logo dimensions
+    $logo_width = intval($settings['logo_width'] ?: 100);
+    $logo_height = intval($settings['logo_height'] ?: 100);
     
     ?>
 <!DOCTYPE html>
@@ -327,9 +333,9 @@ function fp_bio_standalone_render_page() {
         }
 
         .bio-logo {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
+            width: <?php echo $logo_width; ?>px;
+            height: <?php echo $logo_height; ?>px;
+            border-radius: <?php echo ($logo_width === $logo_height) ? '50%' : '12px'; ?>;
             object-fit: cover;
             border: 3px solid var(--primary);
             margin-bottom: 16px;
@@ -577,6 +583,32 @@ function fp_bio_standalone_settings_page() {
                         <textarea id="description" name="fp_bio_standalone_settings[description]" 
                                   rows="3" class="large-text"><?php echo esc_textarea($settings['description']); ?></textarea>
                         <p class="description"><?php esc_html_e('Breve descrizione mostrata sotto il nome (lascia vuoto per usare tagline sito)', 'fp-bio-standalone'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">
+                        <label><?php esc_html_e('Dimensioni Logo', 'fp-bio-standalone'); ?></label>
+                    </th>
+                    <td>
+                        <div style="display: flex; gap: 16px; align-items: center;">
+                            <div>
+                                <label for="logo_width" style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">
+                                    <?php esc_html_e('Larghezza (px)', 'fp-bio-standalone'); ?>
+                                </label>
+                                <input type="number" id="logo_width" name="fp_bio_standalone_settings[logo_width]" 
+                                       value="<?php echo esc_attr($settings['logo_width']); ?>" 
+                                       min="40" max="300" step="1" style="width: 80px;">
+                            </div>
+                            <div>
+                                <label for="logo_height" style="display: block; margin-bottom: 4px; font-size: 12px; color: #666;">
+                                    <?php esc_html_e('Altezza (px)', 'fp-bio-standalone'); ?>
+                                </label>
+                                <input type="number" id="logo_height" name="fp_bio_standalone_settings[logo_height]" 
+                                       value="<?php echo esc_attr($settings['logo_height']); ?>" 
+                                       min="40" max="300" step="1" style="width: 80px;">
+                            </div>
+                        </div>
+                        <p class="description"><?php esc_html_e('Dimensioni uguali = logo circolare. Dimensioni diverse = logo rettangolare con bordi arrotondati.', 'fp-bio-standalone'); ?></p>
                     </td>
                 </tr>
             </table>
