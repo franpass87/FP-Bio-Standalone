@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.3.0');
+define('FP_BIO_STANDALONE_VERSION', '1.3.1');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -109,39 +109,47 @@ function fp_bio_standalone_get_links() {
             continue;
         }
         
-        // Extract all spans
+        // Extract all spans - FP Publisher generates: <span>ICON</span><span>TITLE</span>
         preg_match_all('/<span[^>]*>(.*?)<\/span>/isu', $inner_html, $spans);
         
         $icon = '';
         $title = '';
         
-        if (!empty($spans[1])) {
-            foreach ($spans[1] as $span_content) {
-                $span_text = trim(strip_tags(html_entity_decode($span_content, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-                
-                if ($span_text === '') {
-                    continue;
-                }
-                
-                // Check if this is an emoji (1-2 grapheme clusters, typically emojis)
-                $grapheme_len = grapheme_strlen($span_text);
-                
-                if ($grapheme_len !== false && $grapheme_len <= 2 && empty($icon)) {
-                    // Likely an emoji
-                    $icon = $span_text;
-                } elseif (strlen($span_text) > 2) {
-                    // Likely the title text
-                    $title = $span_text;
-                }
+        if (!empty($spans[1]) && count($spans[1]) >= 2) {
+            // First span is usually the icon
+            $first_span = trim(strip_tags(html_entity_decode($spans[1][0], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            // Second span is usually the title
+            $second_span = trim(strip_tags(html_entity_decode($spans[1][1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            
+            // Always use first span as icon if it's not empty (FP Publisher structure)
+            if ($first_span !== '') {
+                $icon = $first_span;
+            }
+            
+            // Use second span as title
+            if ($second_span !== '') {
+                $title = $second_span;
+            } elseif ($first_span !== '' && mb_strlen($first_span) > 10) {
+                // If first span is very long, it might be the title instead (edge case)
+                $title = $first_span;
+                $icon = '';
+            }
+        } elseif (!empty($spans[1]) && count($spans[1]) === 1) {
+            // Only one span - could be either icon or title
+            $span_text = trim(strip_tags(html_entity_decode($spans[1][0], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            if (mb_strlen($span_text) <= 2) {
+                $icon = $span_text;
+            } else {
+                $title = $span_text;
             }
         }
         
         // Fallback: get all text content if no title found
         if (empty($title)) {
-            $title = trim(strip_tags($inner_html));
-            // Remove the icon from the title if present
-            if (!empty($icon) && strpos($title, $icon) === 0) {
-                $title = trim(substr($title, strlen($icon)));
+            $title = trim(strip_tags(html_entity_decode($inner_html, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            // Remove the icon from the title if present at the beginning
+            if (!empty($icon) && mb_strpos($title, $icon) === 0) {
+                $title = trim(mb_substr($title, mb_strlen($icon)));
             }
         }
         

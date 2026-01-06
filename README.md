@@ -72,6 +72,9 @@ Example content:
 
 ## Changelog
 
+### 1.3.1
+- Fix icon parsing from FP Publisher content (now correctly extracts icon from first span)
+
 ### 1.3.0
 - Add logo selection from WordPress media library
 - Remove logo URL field (now uses media library)
