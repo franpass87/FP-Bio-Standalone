@@ -72,6 +72,11 @@ Example content:
 
 ## Changelog
 
+### 1.3.0
+- Add logo selection from WordPress media library
+- Remove logo URL field (now uses media library)
+- Improved logo preview in settings
+
 ### 1.2.1
 - Fix emoji/icon encoding with proper UTF-8 handling
 - Improved link parsing to correctly extract emoji icons

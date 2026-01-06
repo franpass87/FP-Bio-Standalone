@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.2.1
+ * Version: 1.3.0
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.2.1');
+define('FP_BIO_STANDALONE_VERSION', '1.3.0');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -170,15 +170,25 @@ function fp_bio_standalone_get_links() {
  * Get site info from bio page content (published by FP Publisher)
  */
 function fp_bio_standalone_get_site_info() {
+    $settings = fp_bio_standalone_get_settings();
+    
     $info = [
         'name' => get_bloginfo('name'),
         'description' => get_bloginfo('description'),
         'logo' => '',
     ];
     
+    // First priority: logo from media library (settings)
+    if (!empty($settings['logo_id']) && $settings['logo_id'] > 0) {
+        $logo_url = wp_get_attachment_image_url($settings['logo_id'], 'medium');
+        if ($logo_url) {
+            $info['logo'] = $logo_url;
+        }
+    }
+    
     // Try to get from bio page content
     $bio_page = get_page_by_path('bio');
-    if ($bio_page) {
+    if ($bio_page && empty($info['logo'])) {
         $content = $bio_page->post_content;
         
         // Extract name from <h1> tag
@@ -218,6 +228,7 @@ function fp_bio_standalone_get_settings() {
         'description' => '',
         'logo_width' => 100,
         'logo_height' => 100,
+        'logo_id' => 0,
     ];
     
     $saved = get_option('fp_bio_standalone_settings', []);
@@ -547,6 +558,16 @@ function fp_bio_standalone_register_settings() {
 add_action('admin_init', 'fp_bio_standalone_register_settings');
 
 /**
+ * Enqueue media uploader scripts
+ */
+function fp_bio_standalone_enqueue_media() {
+    if (isset($_GET['page']) && $_GET['page'] === 'fp-bio-standalone') {
+        wp_enqueue_media();
+    }
+}
+add_action('admin_enqueue_scripts', 'fp_bio_standalone_enqueue_media');
+
+/**
  * Settings page content
  */
 function fp_bio_standalone_settings_page() {
@@ -603,6 +624,34 @@ function fp_bio_standalone_settings_page() {
                 </tr>
                 <tr>
                     <th scope="row">
+                        <label><?php esc_html_e('Logo', 'fp-bio-standalone'); ?></label>
+                    </th>
+                    <td>
+                        <div id="fp-bio-logo-preview" style="margin-bottom: 12px;">
+                            <?php 
+                            $logo_id = intval($settings['logo_id'] ?? 0);
+                            if ($logo_id > 0) {
+                                $logo_url = wp_get_attachment_image_url($logo_id, 'medium');
+                                if ($logo_url) {
+                                    echo '<img src="' . esc_url($logo_url) . '" style="max-width: 150px; max-height: 150px; border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #f9f9f9;">';
+                                }
+                            }
+                            ?>
+                        </div>
+                        <input type="hidden" id="logo_id" name="fp_bio_standalone_settings[logo_id]" value="<?php echo esc_attr($logo_id); ?>">
+                        <button type="button" id="fp-bio-select-logo" class="button">
+                            <?php echo $logo_id > 0 ? esc_html__('Cambia Logo', 'fp-bio-standalone') : esc_html__('Seleziona Logo', 'fp-bio-standalone'); ?>
+                        </button>
+                        <?php if ($logo_id > 0): ?>
+                        <button type="button" id="fp-bio-remove-logo" class="button" style="margin-left: 8px;">
+                            <?php esc_html_e('Rimuovi', 'fp-bio-standalone'); ?>
+                        </button>
+                        <?php endif; ?>
+                        <p class="description"><?php esc_html_e('Seleziona un logo dalla galleria media. Se non selezionato, verrà usato il logo del sito.', 'fp-bio-standalone'); ?></p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">
                         <label><?php esc_html_e('Dimensioni Logo', 'fp-bio-standalone'); ?></label>
                     </th>
                     <td>
@@ -638,5 +687,55 @@ function fp_bio_standalone_settings_page() {
             <p><strong>I link vengono letti dalla pagina "bio"</strong> pubblicata da FP Publisher. Assicurati di aver pubblicato la bio dal pannello FP Publisher.</p>
         </div>
     </div>
+    
+    <script>
+    jQuery(document).ready(function($) {
+        var mediaUploader;
+        
+        // Seleziona logo
+        $('#fp-bio-select-logo').on('click', function(e) {
+            e.preventDefault();
+            
+            if (mediaUploader) {
+                mediaUploader.open();
+                return;
+            }
+            
+            mediaUploader = wp.media({
+                title: '<?php echo esc_js(__('Seleziona Logo', 'fp-bio-standalone')); ?>',
+                button: {
+                    text: '<?php echo esc_js(__('Usa questo logo', 'fp-bio-standalone')); ?>'
+                },
+                multiple: false,
+                library: {
+                    type: 'image'
+                }
+            });
+            
+            mediaUploader.on('select', function() {
+                var attachment = mediaUploader.state().get('selection').first().toJSON();
+                $('#logo_id').val(attachment.id);
+                $('#fp-bio-logo-preview').html('<img src="' + attachment.url + '" style="max-width: 150px; max-height: 150px; border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #f9f9f9;">');
+                $('#fp-bio-select-logo').text('<?php echo esc_js(__('Cambia Logo', 'fp-bio-standalone')); ?>');
+                
+                // Mostra il pulsante rimuovi se non esiste
+                if ($('#fp-bio-remove-logo').length === 0) {
+                    $('#fp-bio-select-logo').after('<button type="button" id="fp-bio-remove-logo" class="button" style="margin-left: 8px;"><?php echo esc_js(__('Rimuovi', 'fp-bio-standalone')); ?></button>');
+                }
+            });
+            
+            mediaUploader.open();
+        });
+        
+        // Rimuovi logo
+        $(document).on('click', '#fp-bio-remove-logo', function(e) {
+            e.preventDefault();
+            $('#logo_id').val(0);
+            $('#fp-bio-logo-preview').html('');
+            $('#fp-bio-select-logo').text('<?php echo esc_js(__('Seleziona Logo', 'fp-bio-standalone')); ?>');
+            $(this).remove();
+        });
+    });
+    </script>
     <?php
 }
