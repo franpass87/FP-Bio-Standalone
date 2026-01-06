@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.2.0');
+define('FP_BIO_STANDALONE_VERSION', '1.2.1');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -87,16 +87,17 @@ function fp_bio_standalone_get_links() {
         return $links;
     }
     
-    $content = $bio_page->post_content;
+    // Decode HTML entities to get proper UTF-8 characters (including emojis)
+    $content = html_entity_decode($bio_page->post_content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     
     // Parse links with improved regex that handles nested elements
     // FP Publisher generates: <a href="URL" style="..."><span style="...">ICON</span><span style="...">TITLE</span></a>
     // Match <a> tags and extract href and inner content
-    preg_match_all('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is', $content, $matches, PREG_SET_ORDER);
+    preg_match_all('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/isu', $content, $matches, PREG_SET_ORDER);
     
     foreach ($matches as $match) {
         $url = $match[1];
-        $inner_html = $match[2];
+        $inner_html = html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
         
         // Skip internal WordPress links and anchors
         if (strpos($url, '#') === 0 || strpos($url, 'wp-admin') !== false || strpos($url, 'wp-login') !== false) {
@@ -108,34 +109,49 @@ function fp_bio_standalone_get_links() {
             continue;
         }
         
-        // Extract icon (emoji in first span)
-        $icon = '🔗';
-        if (preg_match('/<span[^>]*>([^<]*)<\/span>/i', $inner_html, $icon_match)) {
-            $potential_icon = trim(strip_tags($icon_match[1]));
-            // Check if it's likely an emoji (short string, not regular text)
-            if (mb_strlen($potential_icon) <= 4 && $potential_icon !== '') {
-                $icon = $potential_icon;
-            }
-        }
+        // Extract all spans
+        preg_match_all('/<span[^>]*>(.*?)<\/span>/isu', $inner_html, $spans);
         
-        // Extract title (text content, strip all HTML and get clean text)
-        $title = trim(strip_tags($inner_html));
+        $icon = '';
+        $title = '';
         
-        // If title is just the icon, try to get the second span
-        if ($title === $icon || mb_strlen($title) <= 4) {
-            if (preg_match_all('/<span[^>]*>([^<]*)<\/span>/i', $inner_html, $spans)) {
-                foreach ($spans[1] as $span_content) {
-                    $span_text = trim($span_content);
-                    if ($span_text !== '' && $span_text !== $icon && mb_strlen($span_text) > 4) {
-                        $title = $span_text;
-                        break;
-                    }
+        if (!empty($spans[1])) {
+            foreach ($spans[1] as $span_content) {
+                $span_text = trim(strip_tags(html_entity_decode($span_content, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+                
+                if ($span_text === '') {
+                    continue;
+                }
+                
+                // Check if this is an emoji (1-2 grapheme clusters, typically emojis)
+                $grapheme_len = grapheme_strlen($span_text);
+                
+                if ($grapheme_len !== false && $grapheme_len <= 2 && empty($icon)) {
+                    // Likely an emoji
+                    $icon = $span_text;
+                } elseif (strlen($span_text) > 2) {
+                    // Likely the title text
+                    $title = $span_text;
                 }
             }
         }
         
+        // Fallback: get all text content if no title found
+        if (empty($title)) {
+            $title = trim(strip_tags($inner_html));
+            // Remove the icon from the title if present
+            if (!empty($icon) && strpos($title, $icon) === 0) {
+                $title = trim(substr($title, strlen($icon)));
+            }
+        }
+        
+        // Default icon if none found
+        if (empty($icon)) {
+            $icon = '🔗';
+        }
+        
         // Skip if no meaningful title
-        if (empty($title) || $title === $icon) {
+        if (empty($title)) {
             continue;
         }
         
@@ -486,7 +502,7 @@ function fp_bio_standalone_render_page() {
                 <?php foreach ($links as $link): ?>
                 <a href="<?php echo esc_url($link['url']); ?>" class="bio-link" target="_blank" rel="noopener">
                     <?php if (!empty($link['icon'])): ?>
-                    <span class="bio-link-icon"><?php echo esc_html($link['icon']); ?></span>
+                    <span class="bio-link-icon"><?php echo wp_kses($link['icon'], []); ?></span>
                     <?php endif; ?>
                     <span><?php echo esc_html($link['title']); ?></span>
                 </a>
