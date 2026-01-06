@@ -3,7 +3,7 @@
  * Plugin Name: FP Bio Standalone
  * Plugin URI: https://github.com/FranPass87/FP-Bio-Standalone
  * Description: Renders /bio page as a beautiful standalone landing page, bypassing WordPress theme completely. Perfect for Instagram "Link in Bio".
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Francesco Passeri
  * Author URI: https://francescopasseri.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('FP_BIO_STANDALONE_VERSION', '1.0.0');
+define('FP_BIO_STANDALONE_VERSION', '1.1.0');
 define('FP_BIO_STANDALONE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 /**
@@ -75,147 +75,133 @@ function fp_bio_standalone_template_redirect() {
 add_action('template_redirect', 'fp_bio_standalone_template_redirect', 1);
 
 /**
- * Get bio links from FP Publisher tables (if available)
- * Falls back to page content if FP Publisher not installed
+ * Get bio links from page content (published by FP Publisher)
+ * The content contains <a> tags with inline styles that we need to parse
  */
 function fp_bio_standalone_get_links() {
-    global $wpdb;
-    
     $links = [];
     
-    // Try to get links from FP Publisher bio_links table
-    $table = $wpdb->prefix . 'fp_pub_bio_links';
-    
-    // Check if table exists
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table}'") === $table;
-    
-    if ($table_exists) {
-        // Get the remote site ID for this site
-        $sites_table = $wpdb->prefix . 'fp_pub_remote_sites';
-        $sites_table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$sites_table}'") === $sites_table;
-        
-        $remote_site_id = null;
-        if ($sites_table_exists) {
-            // Find the remote site that matches this site URL
-            $current_url = home_url();
-            $remote_site_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$sites_table} WHERE site_url LIKE %s LIMIT 1",
-                '%' . $wpdb->esc_like(parse_url($current_url, PHP_URL_HOST)) . '%'
-            ));
-        }
-        
-        // Get active links
-        $query = "SELECT * FROM {$table} WHERE is_active = 1";
-        if ($remote_site_id) {
-            $query .= $wpdb->prepare(" AND remote_site_id = %d", $remote_site_id);
-        }
-        $query .= " AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY sort_order ASC, id ASC";
-        
-        $results = $wpdb->get_results($query, ARRAY_A);
-        
-        if ($results) {
-            foreach ($results as $row) {
-                $links[] = [
-                    'id' => $row['id'],
-                    'title' => $row['title'],
-                    'url' => $row['url'],
-                    'icon' => $row['icon'] ?? '🔗',
-                ];
-            }
-        }
+    // Get the bio page
+    $bio_page = get_page_by_path('bio');
+    if (!$bio_page) {
+        return $links;
     }
     
-    // If no links from FP Publisher, try to parse from bio page content
-    if (empty($links)) {
-        $bio_page = get_page_by_path('bio');
-        if ($bio_page) {
-            // Parse content for links (basic extraction)
-            $content = $bio_page->post_content;
-            preg_match_all('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]+)<\/a>/i', $content, $matches, PREG_SET_ORDER);
-            
-            foreach ($matches as $match) {
-                $url = $match[1];
-                $title = strip_tags($match[2]);
-                
-                // Skip internal WordPress links
-                if (strpos($url, '#') === 0 || strpos($url, 'wp-admin') !== false) {
-                    continue;
-                }
-                
-                $links[] = [
-                    'id' => md5($url),
-                    'title' => $title,
-                    'url' => $url,
-                    'icon' => '🔗',
-                ];
+    $content = $bio_page->post_content;
+    
+    // Parse links with improved regex that handles nested elements
+    // FP Publisher generates: <a href="URL" style="..."><span style="...">ICON</span><span style="...">TITLE</span></a>
+    // Match <a> tags and extract href and inner content
+    preg_match_all('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is', $content, $matches, PREG_SET_ORDER);
+    
+    foreach ($matches as $match) {
+        $url = $match[1];
+        $inner_html = $match[2];
+        
+        // Skip internal WordPress links and anchors
+        if (strpos($url, '#') === 0 || strpos($url, 'wp-admin') !== false || strpos($url, 'wp-login') !== false) {
+            continue;
+        }
+        
+        // Skip the "Powered by" link
+        if (strpos($url, 'francescopasseri.com') !== false) {
+            continue;
+        }
+        
+        // Extract icon (emoji in first span)
+        $icon = '🔗';
+        if (preg_match('/<span[^>]*>([^<]*)<\/span>/i', $inner_html, $icon_match)) {
+            $potential_icon = trim(strip_tags($icon_match[1]));
+            // Check if it's likely an emoji (short string, not regular text)
+            if (mb_strlen($potential_icon) <= 4 && $potential_icon !== '') {
+                $icon = $potential_icon;
             }
         }
+        
+        // Extract title (text content, strip all HTML and get clean text)
+        $title = trim(strip_tags($inner_html));
+        
+        // If title is just the icon, try to get the second span
+        if ($title === $icon || mb_strlen($title) <= 4) {
+            if (preg_match_all('/<span[^>]*>([^<]*)<\/span>/i', $inner_html, $spans)) {
+                foreach ($spans[1] as $span_content) {
+                    $span_text = trim($span_content);
+                    if ($span_text !== '' && $span_text !== $icon && mb_strlen($span_text) > 4) {
+                        $title = $span_text;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Skip if no meaningful title
+        if (empty($title) || $title === $icon) {
+            continue;
+        }
+        
+        $links[] = [
+            'id' => md5($url),
+            'title' => $title,
+            'url' => $url,
+            'icon' => $icon,
+        ];
     }
     
     return $links;
 }
 
 /**
- * Track click (if FP Publisher table exists)
+ * Get site info from bio page content (published by FP Publisher)
  */
-function fp_bio_standalone_track_click() {
-    if (!isset($_GET['fp_bio_click'])) {
-        return;
-    }
+function fp_bio_standalone_get_site_info() {
+    $info = [
+        'name' => get_bloginfo('name'),
+        'description' => get_bloginfo('description'),
+        'logo' => '',
+    ];
     
-    global $wpdb;
-    $link_id = absint($_GET['fp_bio_click']);
-    
-    if ($link_id > 0) {
-        $table = $wpdb->prefix . 'fp_pub_bio_links';
-        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table}'") === $table;
+    // Try to get from bio page content
+    $bio_page = get_page_by_path('bio');
+    if ($bio_page) {
+        $content = $bio_page->post_content;
         
-        if ($table_exists) {
-            $wpdb->query($wpdb->prepare(
-                "UPDATE {$table} SET click_count = click_count + 1 WHERE id = %d",
-                $link_id
-            ));
+        // Extract name from <h1> tag
+        if (preg_match('/<h1[^>]*>([^<]+)<\/h1>/i', $content, $name_match)) {
+            $info['name'] = trim(strip_tags($name_match[1]));
         }
         
-        // Redirect to the actual URL
-        $url = $wpdb->get_var($wpdb->prepare(
-            "SELECT url FROM {$table} WHERE id = %d",
-            $link_id
-        ));
+        // Extract description from <p> tag in header
+        if (preg_match('/<p[^>]*class=["\']fp-bio-description["\'][^>]*>([^<]+)<\/p>/i', $content, $desc_match)) {
+            $info['description'] = trim(strip_tags($desc_match[1]));
+        }
         
-        if ($url) {
-            wp_redirect($url);
-            exit;
+        // Extract logo from <img> tag
+        if (preg_match('/<img[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $content, $logo_match)) {
+            $info['logo'] = $logo_match[1];
         }
     }
+    
+    // Fallback to WordPress custom logo
+    if (empty($info['logo'])) {
+        $custom_logo_id = get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $info['logo'] = wp_get_attachment_image_url($custom_logo_id, 'medium');
+        }
+    }
+    
+    return $info;
 }
-add_action('init', 'fp_bio_standalone_track_click');
 
 /**
- * Get settings from options or FP Publisher
+ * Get settings from options
  */
 function fp_bio_standalone_get_settings() {
     $defaults = [
-        'primary_color' => '#3b82f6',
-        'theme' => 'auto', // auto, light, dark
-        'logo_url' => '',
+        'primary_color' => '#8B1538', // Wine red to match the screenshot
+        'theme' => 'auto',
         'description' => '',
     ];
     
-    // Try to get from FP Publisher settings
-    global $wpdb;
-    $settings_table = $wpdb->prefix . 'fp_pub_bio_settings';
-    
-    if ($wpdb->get_var("SHOW TABLES LIKE '{$settings_table}'") === $settings_table) {
-        $results = $wpdb->get_results("SELECT setting_key, setting_value FROM {$settings_table}", ARRAY_A);
-        foreach ($results as $row) {
-            if (isset($defaults[$row['setting_key']])) {
-                $defaults[$row['setting_key']] = $row['setting_value'];
-            }
-        }
-    }
-    
-    // Fallback to WordPress options
     $saved = get_option('fp_bio_standalone_settings', []);
     
     return array_merge($defaults, $saved);
@@ -225,40 +211,19 @@ function fp_bio_standalone_get_settings() {
  * Render the standalone bio page
  */
 function fp_bio_standalone_render_page() {
-    $site_name = get_bloginfo('name');
-    $site_description = get_bloginfo('description');
+    $site_info = fp_bio_standalone_get_site_info();
     $links = fp_bio_standalone_get_links();
     $settings = fp_bio_standalone_get_settings();
     
-    // Get logo
-    $logo_url = $settings['logo_url'];
-    if (empty($logo_url)) {
-        $custom_logo_id = get_theme_mod('custom_logo');
-        if ($custom_logo_id) {
-            $logo_url = wp_get_attachment_image_url($custom_logo_id, 'medium');
-        }
-    }
+    $site_name = $site_info['name'];
+    $site_description = $settings['description'] ?: $site_info['description'];
+    $logo_url = $site_info['logo'];
     
     // Primary color
-    $primary = $settings['primary_color'] ?: '#3b82f6';
+    $primary = $settings['primary_color'] ?: '#8B1538';
     
     // Theme
     $theme = $settings['theme'] ?: 'auto';
-    
-    // Description
-    $description = $settings['description'] ?: $site_description;
-    
-    // Generate tracking URLs
-    $tracked_links = [];
-    foreach ($links as $link) {
-        $tracked_links[] = [
-            'title' => $link['title'],
-            'url' => is_numeric($link['id']) 
-                ? add_query_arg('fp_bio_click', $link['id'], home_url('/bio'))
-                : $link['url'],
-            'icon' => $link['icon'],
-        ];
-    }
     
     ?>
 <!DOCTYPE html>
@@ -267,17 +232,15 @@ function fp_bio_standalone_render_page() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="<?php echo esc_attr($primary); ?>">
-    <meta name="description" content="<?php echo esc_attr($description); ?>">
+    <meta name="description" content="<?php echo esc_attr($site_description); ?>">
     <meta property="og:title" content="<?php echo esc_attr($site_name); ?> - Link">
-    <meta property="og:description" content="<?php echo esc_attr($description); ?>">
+    <meta property="og:description" content="<?php echo esc_attr($site_description); ?>">
     <meta property="og:type" content="website">
     <meta property="og:url" content="<?php echo esc_url(home_url('/bio')); ?>">
     <?php if ($logo_url): ?>
     <meta property="og:image" content="<?php echo esc_url($logo_url); ?>">
     <?php endif; ?>
     <title><?php echo esc_html($site_name); ?> - Link</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <style>
         :root {
             --primary: <?php echo esc_attr($primary); ?>;
@@ -393,11 +356,11 @@ function fp_bio_standalone_render_page() {
             width: 100%;
             min-height: 56px;
             padding: 14px 20px;
-            background: var(--surface);
-            border: 1px solid var(--border);
+            background: var(--primary);
+            border: none;
             border-radius: var(--radius);
             text-decoration: none;
-            color: var(--text);
+            color: #ffffff;
             font-weight: 500;
             font-size: 1rem;
             transition: all 0.2s ease;
@@ -406,11 +369,9 @@ function fp_bio_standalone_render_page() {
         }
 
         .bio-link:hover, .bio-link:focus {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: #fff;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+            filter: brightness(1.1);
         }
 
         .bio-link:active {
@@ -500,14 +461,14 @@ function fp_bio_standalone_render_page() {
             <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr($site_name); ?>" class="bio-logo">
             <?php endif; ?>
             <h1 class="bio-name"><?php echo esc_html($site_name); ?></h1>
-            <?php if ($description): ?>
-            <p class="bio-description"><?php echo esc_html($description); ?></p>
+            <?php if ($site_description): ?>
+            <p class="bio-description"><?php echo esc_html($site_description); ?></p>
             <?php endif; ?>
         </header>
 
         <nav class="bio-links" aria-label="Link utili">
-            <?php if (!empty($tracked_links)): ?>
-                <?php foreach ($tracked_links as $link): ?>
+            <?php if (!empty($links)): ?>
+                <?php foreach ($links as $link): ?>
                 <a href="<?php echo esc_url($link['url']); ?>" class="bio-link" target="_blank" rel="noopener">
                     <?php if (!empty($link['icon'])): ?>
                     <span class="bio-link-icon"><?php echo esc_html($link['icon']); ?></span>
@@ -525,7 +486,7 @@ function fp_bio_standalone_render_page() {
     </div>
 
     <footer class="bio-footer">
-        <p>Powered by <a href="https://francescopasseri.com" target="_blank" rel="noopener">FP Publisher</a></p>
+        <p>Powered by <a href="https://francescopasseri.com" target="_blank" rel="noopener">Francesco Passeri</a></p>
     </footer>
 </body>
 </html>
@@ -584,7 +545,7 @@ function fp_bio_standalone_settings_page() {
                     <td>
                         <input type="color" id="primary_color" name="fp_bio_standalone_settings[primary_color]" 
                                value="<?php echo esc_attr($settings['primary_color']); ?>">
-                        <p class="description"><?php esc_html_e('Colore usato per bordi e hover', 'fp-bio-standalone'); ?></p>
+                        <p class="description"><?php esc_html_e('Colore dei pulsanti link', 'fp-bio-standalone'); ?></p>
                     </td>
                 </tr>
                 <tr>
@@ -601,22 +562,12 @@ function fp_bio_standalone_settings_page() {
                 </tr>
                 <tr>
                     <th scope="row">
-                        <label for="logo_url"><?php esc_html_e('Logo URL', 'fp-bio-standalone'); ?></label>
-                    </th>
-                    <td>
-                        <input type="url" id="logo_url" name="fp_bio_standalone_settings[logo_url]" 
-                               value="<?php echo esc_attr($settings['logo_url']); ?>" class="regular-text">
-                        <p class="description"><?php esc_html_e('Lascia vuoto per usare il logo del sito', 'fp-bio-standalone'); ?></p>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row">
                         <label for="description"><?php esc_html_e('Descrizione', 'fp-bio-standalone'); ?></label>
                     </th>
                     <td>
                         <textarea id="description" name="fp_bio_standalone_settings[description]" 
                                   rows="3" class="large-text"><?php echo esc_textarea($settings['description']); ?></textarea>
-                        <p class="description"><?php esc_html_e('Breve descrizione mostrata sotto il nome', 'fp-bio-standalone'); ?></p>
+                        <p class="description"><?php esc_html_e('Breve descrizione mostrata sotto il nome (lascia vuoto per usare tagline sito)', 'fp-bio-standalone'); ?></p>
                     </td>
                 </tr>
             </table>
@@ -627,12 +578,7 @@ function fp_bio_standalone_settings_page() {
         <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; border-left: 4px solid #3b82f6; margin-top: 30px; max-width: 600px;">
             <h3 style="margin-top: 0;">ℹ️ Come Funziona</h3>
             <p>Questo plugin renderizza la pagina <code>/bio</code> come una landing page standalone, bypassando completamente il tema WordPress.</p>
-            <p><strong>I link vengono presi da:</strong></p>
-            <ol>
-                <li>Tabella FP Publisher (se disponibile)</li>
-                <li>Contenuto della pagina con slug "bio" (fallback)</li>
-            </ol>
-            <p>Per gestire i link, usa FP Publisher sul sito manager, oppure crea una pagina "Bio" e inserisci i link manualmente.</p>
+            <p><strong>I link vengono letti dalla pagina "bio"</strong> pubblicata da FP Publisher. Assicurati di aver pubblicato la bio dal pannello FP Publisher.</p>
         </div>
     </div>
     <?php
