@@ -72,6 +72,22 @@ Example content:
 
 ## Changelog
 
+### 1.2.1
+- Fix emoji/icon encoding with proper UTF-8 handling
+- Improved link parsing to correctly extract emoji icons
+
+### 1.2.0
+- Add custom logo width and height settings
+- Smart border radius (circular for square logos, rounded for rectangular)
+
+### 1.1.1
+- Add favicon support (uses WordPress site icon)
+
+### 1.1.0
+- Fix link parsing from FP Publisher content
+- Change attribution to "Francesco Passeri"
+- Improved design with colored buttons
+
 ### 1.0.0
 - Initial release
 - Standalone bio page rendering
